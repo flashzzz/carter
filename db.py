@@ -118,6 +118,17 @@ async def get_pending_items(group_id):
     return await list_items(group_id, statuses=["pending"])
 
 
+async def get_active_items(group_id):
+    """Every non-deleted item — the full list to rebuild the cart from."""
+    return await list_items(group_id)
+
+
+async def get_item(item_id):
+    async with _pool.connection() as conn:
+        cur = await conn.execute("SELECT * FROM cart_items WHERE id = %s", (item_id,))
+        return await cur.fetchone()
+
+
 async def remove_items(group_id, text):
     """Soft-delete every active item whose raw_text contains `text`."""
     async with _pool.connection() as conn:

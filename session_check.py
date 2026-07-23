@@ -1,12 +1,13 @@
 """
-Cron entrypoint. Loads the persisted session, checks it's still logged in, and
-DMs the admin (and exits non-zero) if it's dead. No queue, no bot loop.
+Cron entrypoint — health canary. There's no login/session to expire anymore
+(guest flow), so this verifies the guest path still works end to end: set the
+delivery location and confirm products render + a search returns results. DMs
+the admin (and exits non-zero) if the flow is broken (e.g. Blinkit UI changed).
 
 Run by a Northflank cron job every few hours:  python session_check.py
 """
 import asyncio
 import logging
-import os
 import sys
 import urllib.parse
 import urllib.request
@@ -15,7 +16,7 @@ import config
 from store_selectors import get_site
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
-log = logging.getLogger("session_check")
+log = logging.getLogger("health_check")
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -40,28 +41,27 @@ async def _check():
     from playwright.async_api import async_playwright
 
     site = get_site()
-    if not os.path.exists(config.SESSION_PATH):
-        _notify(f"🔐 [{site.name}] No session file at {config.SESSION_PATH}. Seed it.")
-        return False
-
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         context = await browser.new_context(
-            storage_state=config.SESSION_PATH, user_agent=_UA,
-            viewport={"width": 1280, "height": 800},
+            user_agent=_UA, viewport={"width": 1280, "height": 900}
         )
         page = await context.new_page()
         try:
-            ok = await site.ensure_logged_in(page)
+            if not await site.ensure_location(page, config.BLINKIT_LOCATION):
+                _notify(f"📍 [{site.name}] Can't set location “{config.BLINKIT_LOCATION}”.")
+                return False
+            res = await site.search_and_add(page, "milk", 1)
+            ok = res.status in ("added", "ambiguous")
         finally:
             await browser.close()
 
     if ok:
-        log.info("[%s] session healthy", site.name)
+        log.info("[%s] guest flow healthy", site.name)
     else:
-        _notify(f"🔐 [{site.name}] Session expired — re-seed storage_state.json.")
+        _notify(f"⚠️ [{site.name}] Guest flow broken — search returned '{res.status}'. UI may have changed.")
     return ok
 
 

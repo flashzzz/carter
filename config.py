@@ -2,6 +2,24 @@
 import os
 
 
+def _load_dotenv(path=".env"):
+    """Minimal .env loader for local dev. No-op in prod (no file, real env vars).
+    Never overrides variables already present in the environment."""
+    if not os.path.exists(path):
+        return
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip('"').strip("'")
+            os.environ.setdefault(key, val)
+
+
+_load_dotenv()
+
+
 def _get(name, default=None, required=False):
     val = os.environ.get(name, default)
     if required and (val is None or val == ""):
@@ -12,8 +30,9 @@ def _get(name, default=None, required=False):
 TELEGRAM_TOKEN = _get("TELEGRAM_TOKEN", required=True)
 DATABASE_URL = _get("DATABASE_URL", required=True)
 
-# Where the logged-in browser session is persisted (Northflank volume).
-SESSION_PATH = _get("SESSION_PATH", "/data/storage_state.json")
+# Guest delivery location (pincode or locality). No login needed — Blinkit only
+# requires a delivery location to browse, add to cart, and share. e.g. "411057".
+BLINKIT_LOCATION = _get("BLINKIT_LOCATION", required=True)
 
 # Where health-check / "session dead" alerts are DM'd. Optional but recommended.
 _admin = _get("ADMIN_CHAT_ID", "")

@@ -8,7 +8,13 @@ import asyncio
 import logging
 
 from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 import config
 import db
@@ -33,7 +39,8 @@ def _allowed(chat_id):
 # ---------- reactions ----------
 
 async def _react_ok(bot, chat_id, message_id):
-    for emoji in ("✅", "👍"):
+    # 👍 is in Telegram's default allowed-reaction set; ✅ is not (returns 400).
+    for emoji in ("👍", "✅"):
         try:
             await bot.set_message_reaction(chat_id=chat_id, message_id=message_id, reaction=emoji)
             return
@@ -122,9 +129,9 @@ async def cmd_remove(update: Update, context, text):
 
 async def cmd_link(update: Update, context):
     chat_id = update.effective_chat.id
-    pending = await db.get_pending_items(chat_id)
-    if not pending:
-        await update.effective_message.reply_text("Nothing pending to add. Drop items first.")
+    active = await db.get_active_items(chat_id)
+    if not active:
+        await update.effective_message.reply_text("List is empty. Drop items first.")
         return
     await db.set_cart_status(chat_id, "building")
     queue = context.application.bot_data["queue"]
@@ -138,6 +145,34 @@ async def cmd_reset(update: Update, context):
     chat_id = update.effective_chat.id
     queue = context.application.bot_data["queue"]
     await queue.put({"type": "reset", "group_id": chat_id, "chat_id": chat_id})
+
+
+async def on_pick(update: Update, context):
+    """Inline-keyboard callback: user tapped a product for an ambiguous item."""
+    q = update.callback_query
+    await q.answer()
+    chat_id = update.effective_chat.id
+    if not _allowed(chat_id):
+        return
+    try:
+        _, sid, sidx = q.data.split(":")
+        item_id, idx = int(sid), int(sidx)
+    except (ValueError, AttributeError):
+        return
+    item = await db.get_item(item_id)
+    if not item or item["deleted"]:
+        await q.edit_message_text("This choice expired — send `link` again.")
+        return
+    cands = item["candidates"] or []
+    if idx < 0 or idx >= len(cands):
+        return
+    chosen = cands[idx]
+    await db.set_item_status(item_id, "pending", chosen.get("product_id"), chosen.get("name"))
+    if chosen.get("product_id"):
+        await db.upsert_alias(
+            chat_id, normalize_phrase(item["raw_text"]), chosen["product_id"], chosen.get("name")
+        )
+    await q.edit_message_text(f"✅ “{item['raw_text']}” → {chosen.get('name')}\nSend `link` to update the cart.")
 
 
 async def answer_disambiguation(update: Update, context, choice):
@@ -185,7 +220,11 @@ async def post_init(app: Application):
     queue: asyncio.Queue = asyncio.Queue()
     app.bot_data["queue"] = queue
     app.bot_data["worker_task"] = asyncio.create_task(worker.worker_loop(app, queue))
-    app.bot_data["health_server"] = await _health_server(config.HEALTH_PORT)
+    try:
+        app.bot_data["health_server"] = await _health_server(config.HEALTH_PORT)
+    except OSError as exc:
+        # A busy port must never take the bot down; the health probe is optional.
+        log.warning("health server not started (%s)", exc)
     log.info("bot ready — platform=%s allowed=%s", config.PLATFORM, config.ALLOWED_CHAT_IDS or "ALL")
 
 
@@ -201,6 +240,7 @@ def main():
         .post_shutdown(post_shutdown)
         .build()
     )
+    app.add_handler(CallbackQueryHandler(on_pick, pattern="^pick:"))
     app.add_handler(MessageHandler(filters.TEXT, handle_text))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
