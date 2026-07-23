@@ -1,0 +1,4 @@
+# playwright MUST match the Chromium shipped in the base image (v1.47.0-jammy).
+python-telegram-bot[job-queue]~=21.6
+playwright==1.47.0
+psycopg[binary,pool]>=3.2,<4
