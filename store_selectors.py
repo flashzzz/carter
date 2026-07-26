@@ -203,6 +203,10 @@ class Blinkit(Site):
         a delivery location is all Blinkit requires to browse, cart, and share."""
         await page.goto(self.base_url, wait_until="domcontentloaded", timeout=45_000)
         await page.wait_for_timeout(1500)
+        body = (await page.inner_text("body"))[:400].lower()
+        if "access denied" in body or "you have been blocked" in body:
+            log.warning("blinkit BLOCKED this IP (%s): %s", page.url, body[:200])
+            return False
         box = page.locator(self.LOCATION_INPUT)
         try:
             await box.wait_for(timeout=8000)

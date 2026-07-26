@@ -198,8 +198,9 @@ async def _safe_send(app, chat_id, text):
 
 
 async def _alert_location_failed(app, chat_id):
-    msg = (f"📍 Couldn't set the delivery location “{config.BLINKIT_LOCATION}” on Blinkit — "
-           "it may be unserviceable, or the site's location UI changed.")
+    msg = (f"📍 Couldn't reach Blinkit for “{config.BLINKIT_LOCATION}”. Likely this IP is "
+           "blocked by Blinkit's anti-bot (common on datacenter/cloud IPs) — run the bot "
+           "from an India residential IP or set PROXY_SERVER.")
     await _safe_send(app, chat_id, msg)
     if config.ADMIN_CHAT_ID and config.ADMIN_CHAT_ID != chat_id:
         await _safe_send(app, config.ADMIN_CHAT_ID, msg)
