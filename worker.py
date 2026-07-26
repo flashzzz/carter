@@ -53,7 +53,10 @@ async def _new_context(p):
         timeout=45_000,
     )
     # Fresh guest context every build: no login, empty cart to start, no drift.
-    context = await browser.new_context(user_agent=_UA, viewport=_VIEWPORT)
+    ctx_kwargs = {"user_agent": _UA, "viewport": _VIEWPORT}
+    if config.PROXY:
+        ctx_kwargs["proxy"] = config.PROXY
+    context = await browser.new_context(**ctx_kwargs)
     return browser, context
 
 
@@ -78,6 +81,13 @@ async def _do_build(app, job):
         browser, context = await _new_context(p)
         page = await context.new_page()
         try:
+            # One-off diagnostic: what IP/country is the browser egressing from?
+            try:
+                await page.goto("https://api.country.is/", timeout=15_000)
+                log.info("egress: %s", (await page.inner_text("body"))[:200])
+            except Exception as exc:
+                log.info("egress check failed: %s", exc)
+
             log.info("build: setting location")
             if not await site.ensure_location(page, config.BLINKIT_LOCATION):
                 await db.set_cart_status(group_id, "open")

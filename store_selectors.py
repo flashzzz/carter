@@ -16,10 +16,13 @@ required to browse, cart, and share on Blinkit.
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 from dataclasses import dataclass, field
 
 import config
+
+log = logging.getLogger("store")
 
 
 @dataclass
@@ -226,6 +229,11 @@ class Blinkit(Site):
             cards = page.locator(self.CARD)
             n = await cards.count()
             if n == 0:
+                try:
+                    head = (await page.inner_text("body"))[:300].replace("\n", " ")
+                except Exception:
+                    head = "?"
+                log.warning("no cards for %r | url=%s | body=%s", query, page.url, head)
                 return ResolveResult("not_found")
 
             # If we know the exact product from a prior disambiguation, use it.

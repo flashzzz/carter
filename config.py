@@ -55,3 +55,16 @@ HEADLESS = _get("HEADLESS", "true").strip().lower() != "false"
 # Randomised human-paced delays (seconds) between browser actions.
 MIN_DELAY = float(_get("MIN_DELAY", "0.8"))
 MAX_DELAY = float(_get("MAX_DELAY", "2.2"))
+
+# Optional proxy for the browser (e.g. an India IP, since Blinkit is India-only
+# and datacenter IPs get no products). Format: "http://host:port" or
+# "socks5://host:port". Leave empty to connect directly.
+_proxy_server = _get("PROXY_SERVER", "")
+PROXY = None
+if _proxy_server.strip():
+    PROXY = {"server": _proxy_server.strip()}
+    _pu, _pp = _get("PROXY_USERNAME", ""), _get("PROXY_PASSWORD", "")
+    if _pu.strip():
+        PROXY["username"] = _pu.strip()
+    if _pp.strip():
+        PROXY["password"] = _pp.strip()
